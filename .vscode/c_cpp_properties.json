@@ -3,7 +3,8 @@
         {
             "name": "Mac",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "~/Documents/Arduino/**"
             ],
             "defines": [],
             "macFrameworkPath": [

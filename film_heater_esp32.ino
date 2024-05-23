@@ -33,6 +33,7 @@ bool setpointLocked = false;
 long oldPosition = -999;
 float currentTemp = 22;
 int setpoint = 22;
+float previousPwmPercentage = -1.0;
 volatile long encoderPosition = 0;
 long lastEncoderPosition = 0;
 bool displayNeedsUpdate = true;
@@ -186,6 +187,12 @@ void setRelayWithPID() {
 
     analogWrite(RELAY_PIN, totalOutput);
 
+    float currentPwmPercentage = (totalOutput / 255.0) * 100;
+    if (fabs(currentPwmPercentage - previousPwmPercentage) > 1.0) {
+        displayNeedsUpdate = true;
+        previousPwmPercentage = currentPwmPercentage;
+    }
+
     if (prevTempTooLow != (currentTemp < (setpoint - RELAY_SINK_DEADBAND)) || (prevRelayIsOn != (totalOutput > 0))) {
         displayNeedsUpdate = true;
         prevTempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
@@ -215,8 +222,7 @@ void updateDisplay() {
 
     display.setCursor(0, 40);
     display.print("PWM: ");
-    int pwmPercentage = (Output / 255.0) * 100;
-    display.print(pwmPercentage);
+    display.print(previousPwmPercentage);
     display.print("%");
 
     display.display();
