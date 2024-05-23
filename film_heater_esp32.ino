@@ -109,7 +109,7 @@ void updateEncoder() {
       if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) {
         encoderPosition--;
       }
-      if (sum == 0b1110 || sum == 0b0117 || sum == 0b0001 || sum == 0b1000) {
+      if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) {
         encoderPosition++;
       }
       changeCount = 0;
@@ -195,31 +195,33 @@ void setRelayWithPID() {
 
 void updateDisplay() {
   if (!displayNeedsUpdate) {
-    return;
+    return;  // If no update is needed, just return
   }
 
   display.clearDisplay();
   display.setTextSize(2);
-  display.setTextColor(SSD1306_WHITE);
+  display.setTextColor(SSD1306_WHITE);  // Set text color to white
   display.setCursor(0, 0);
   display.print("Set: ");
   display.print(setpoint);
   display.print("C ");
   if (setpointLocked) {
-    display.print("*");
+    display.print("*");  // Add an asterisk if setpoint is locked
   }
 
   display.setCursor(0, 20);
   display.print("Temp:");
-  display.print(currentTemp);
+  display.print(currentTemp); 
 
-  display.setCursor(100, 40);
-  if (relayIsOn) {
-    display.print("~");
-  }
+  display.setCursor(0, 40);
+  display.print("PWM: ");
+  int pwmPercentage = (Output / 255.0) * 100;
+  display.print(pwmPercentage);
+  display.print("%");
+
   display.display();
 
-  displayNeedsUpdate = false;
+  displayNeedsUpdate = false;  // Reset update flag
 }
 
 void loop() {
