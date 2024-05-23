@@ -5,6 +5,7 @@
 #include <Encoder.h>
 #include <Bounce2.h>
 #include <math.h>
+#include <PID_v1.h>
 
 #define BUTTON_PIN 9  // Change as per your connection
 #define READ_TEMP_MS 750  // Change as per your connection
@@ -30,6 +31,7 @@ Bounce2::Button encoderButton = Bounce2::Button();
 
 // relay pin
 int relayPin = 6;  // Digital pin connected to the relay module
+//int relayGNDPin = 5; //See setting pin below
 
 // Variables
 bool setpointLocked = false;
@@ -43,7 +45,14 @@ bool relayIsOn = false;
 bool prevRelayIsOn = false;
 bool prevTempTooLow = false;
 
+double Setpoint, Input, Output;
+PID myPID(&Input, &Output, &Setpoint, 2, 5, 1, DIRECT);
+
 void setup() {
+  //RELAY GND PIN
+  pinMode(5, OUTPUT);
+  digitalWrite(5, LOW);
+
   //ENCODER POWER
   pinMode(14, OUTPUT);
   digitalWrite(14, LOW);
@@ -71,6 +80,12 @@ void setup() {
     for (;;)
       ;  // Don't proceed, loop forever
   }
+
+  // Initialize the PID controller
+  Setpoint = setpoint;
+  myPID.SetMode(AUTOMATIC);
+  myPID.SetOutputLimits(0, 255);  // PWM range for analogWrite
+
   Serial.begin(9600);
   Serial.println("MAX6675 test");
   // wait for MAX chip to stabilize
@@ -165,33 +180,48 @@ void readTemp() {
     }
 }
 
-void setRelay() {
-    // Relay engages when temperature is more than 0.5 degrees below the setpoint
-    bool tempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
-    // Relay disengages only when the temperature reaches or exceeds the setpoint
-    bool tempHighEnough = (currentTemp >= setpoint);
+// void setRelay() {
+//     // Relay engages when temperature is more than 0.5 degrees below the setpoint
+//     bool tempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
+//     // Relay disengages only when the temperature reaches or exceeds the setpoint
+//     bool tempHighEnough = (currentTemp >= setpoint);
 
-    if (tempTooLow) {
-        if (!relayIsOn) {  // Check if relay is currently off
-            digitalWrite(relayPin, HIGH);  // Turn on the relay
-            relayIsOn = true;
-            Serial.println("Relay ON");
-        }
-    } else if (tempHighEnough) {
-        if (relayIsOn) {  // Check if relay is currently on
-            digitalWrite(relayPin, LOW);  // Turn off the relay
-            relayIsOn = false;
-            Serial.println("Relay OFF");
-        }
-    }
+//     if (tempTooLow) {
+//         if (!relayIsOn) {  // Check if relay is currently off
+//             digitalWrite(relayPin, HIGH);  // Turn on the relay
+//             relayIsOn = true;
+//             Serial.println("Relay ON");
+//         }
+//     } else if (tempHighEnough) {
+//         if (relayIsOn) {  // Check if relay is currently on
+//             digitalWrite(relayPin, LOW);  // Turn off the relay
+//             relayIsOn = false;
+//             Serial.println("Relay OFF");
+//         }
+//     }
 
-    // Update display if there is a change in relay status or temperature crossing set conditions
-    if (prevTempTooLow != tempTooLow || (prevRelayIsOn != relayIsOn)) {
-        displayNeedsUpdate = true;
-        prevTempTooLow = tempTooLow;
-        prevRelayIsOn = relayIsOn;
-    }
+//     // Update display if there is a change in relay status or temperature crossing set conditions
+//     if (prevTempTooLow != tempTooLow || (prevRelayIsOn != relayIsOn)) {
+//         displayNeedsUpdate = true;
+//         prevTempTooLow = tempTooLow;
+//         prevRelayIsOn = relayIsOn;
+//     }
+// }
+void setRelayWithPID() {
+  Input = currentTemp;
+  Setpoint = setpoint;
+  myPID.Compute();
+
+  analogWrite(relayPin, Output);  // Output is the PWM value
+
+  // Update display if there is a change in relay status or temperature crossing set conditions
+  if (prevTempTooLow != (currentTemp < (setpoint - RELAY_SINK_DEADBAND)) || (prevRelayIsOn != (Output > 0))) {
+      displayNeedsUpdate = true;
+      prevTempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
+      prevRelayIsOn = (Output > 0);
+  }
 }
+
 
 void updateDisplay() {
   if (!displayNeedsUpdate) {
@@ -226,6 +256,6 @@ void loop() {
   handleSetpointLock();
   handleSetpointChange();
   readTemp();
-  setRelay();
+  setRelayWithPID();
   updateDisplay();
 }
