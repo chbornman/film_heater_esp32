@@ -7,40 +7,34 @@
 #include <math.h>
 #include <PID_v1.h>
 
-#define BUTTON_PIN 9  // Change as per your connection
-#define READ_TEMP_MS 750  // Change as per your connection
-#define RELAY_SINK_DEADBAND 0.5  // Change as per your connection
+#define BUTTON_PIN 9
+#define READ_TEMP_MS 750
+#define RELAY_SINK_DEADBAND 0.5
 
-// Declaration for an SSD1306 display connected to I2C (SCL, SDA pins)
-#define SCREEN_WIDTH 128  // OLED display width, in pixels
-#define SCREEN_HEIGHT 64  // OLED display height, in pixels
-#define OLED_RESET -1     // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// MAX6675 setup
 int thermoDO = 16;
 int thermoCS = 17;
 int thermoCLK = 18;
 MAX6675 thermocouple(thermoCLK, thermoCS, thermoDO);
 
-// Encoder and Button
-int encoderPinA = 10;  // Change as per your connection
-int encoderPinB = 11;  // Change as per your connection
+int encoderPinA = 10;
+int encoderPinB = 11;
 Encoder myEnc(encoderPinA, encoderPinB);
 Bounce2::Button encoderButton = Bounce2::Button();
 
-// relay pin
-int relayPin = 6;  // Digital pin connected to the relay module
-//int relayGNDPin = 5; //See setting pin below
+int relayPin = 6;
 
-// Variables
 bool setpointLocked = false;
 long oldPosition = -999;
 float currentTemp = 22;
-int setpoint = 22;  // Default setpoint
+int setpoint = 22;
 volatile long encoderPosition = 0;
 long lastEncoderPosition = 0;
-bool displayNeedsUpdate = true;  // Initialize to true to update display initially
+bool displayNeedsUpdate = true;
 bool relayIsOn = false;
 bool prevRelayIsOn = false;
 bool prevTempTooLow = false;
@@ -48,89 +42,93 @@ bool prevTempTooLow = false;
 double Setpoint, Input, Output;
 PID myPID(&Input, &Output, &Setpoint, 2, 5, 1, DIRECT);
 
+// Kalman filter variables
+float Q = 0.1;
+float R = 0.1;
+float P = 1.0;
+float K;
+float X = 22;
+
+float kalmanFilter(float measurement) {
+  P = P + Q;
+  K = P / (P + R);
+  X = X + K * (measurement - X);
+  P = (1 - K) * P;
+  return X;
+}
+
+// Feedforward variables
+float heatLossRate = 0.05; // Adjust this value based on your system's heat loss rate
+float feedforwardTerm = 0;
+
 void setup() {
-  //RELAY GND PIN
   pinMode(5, OUTPUT);
   digitalWrite(5, LOW);
-
-  //ENCODER POWER
   pinMode(14, OUTPUT);
   digitalWrite(14, LOW);
   pinMode(15, OUTPUT);
   digitalWrite(15, HIGH);
-
-  //DISPLAY POWER
   pinMode(13, OUTPUT);
   pinMode(12, OUTPUT);
   digitalWrite(13, LOW);
   digitalWrite(12, HIGH);
   delay(1000);
-
-  //encoder button
-  encoderButton.attach(BUTTON_PIN, INPUT_PULLUP);  // Use external pull-up
-  encoderButton.interval(5);                       // Debounce interval in milliseconds
-  encoderButton.setPressedState(LOW);              // High state corresponds to physically pressing the button
-    // Attach interrupts
+  
+  encoderButton.attach(BUTTON_PIN, INPUT_PULLUP);
+  encoderButton.interval(5);
+  encoderButton.setPressedState(LOW);
   attachInterrupt(digitalPinToInterrupt(encoderPinA), updateEncoder, CHANGE);
   attachInterrupt(digitalPinToInterrupt(encoderPinB), updateEncoder, CHANGE);
 
-  // Initialize the OLED display
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {  // Address 0x3C for 128x64
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println(F("SSD1306 allocation failed"));
-    for (;;)
-      ;  // Don't proceed, loop forever
+    for (;;);
   }
 
-  // Initialize the PID controller
   Setpoint = setpoint;
   myPID.SetMode(AUTOMATIC);
-  myPID.SetOutputLimits(0, 255);  // PWM range for analogWrite
+  myPID.SetOutputLimits(0, 255);
 
   Serial.begin(9600);
   Serial.println("MAX6675 test");
-  // wait for MAX chip to stabilize
   delay(500);
   Serial.println("Setup complete - starting main loop");
 }
 
 void updateEncoder() {
   static int lastEncoded = 0;
-  static int changeCount = 0;  // Add a counter to track changes
+  static int changeCount = 0;
+  int MSB = digitalRead(encoderPinA);
+  int LSB = digitalRead(encoderPinB);
+  int encoded = (MSB << 1) | LSB;
+  int sum = (lastEncoded << 2) | encoded;
 
-  int MSB = digitalRead(encoderPinA);      // MSB = most significant bit
-  int LSB = digitalRead(encoderPinB);      // LSB = least significant bit
-  int encoded = (MSB << 1) | LSB;          // converting the 2 pin value to single number
-  int sum = (lastEncoded << 2) | encoded;  // adding it to the previous encoded value
-
-  // Increment changeCount on any change, but only update position every fourth change
   if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011 || sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) {
     changeCount++;
-    if (changeCount >= 4) {  // Update position only every fourth change
+    if (changeCount >= 4) {
       if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) {
-        encoderPosition--;  // Swap increment and decrement to reverse direction
+        encoderPosition--;
       }
-      if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) {
-        encoderPosition++;  // Swap increment and decrement to reverse direction
+      if (sum == 0b1110 || sum == 0b0117 || sum == 0b0001 || sum == 0b1000) {
+        encoderPosition++;
       }
-      changeCount = 0;  // Reset change count after updating
+      changeCount = 0;
     }
   }
 
-  lastEncoded = encoded;  // Store this value for next time
+  lastEncoded = encoded;
 }
 
 void handleSetpointLock() {
-  // Update the Bounce instance (YOU MUST DO THIS EVERY LOOP)
   encoderButton.update();
 
   if (encoderButton.pressed()) {
-    setpointLocked = !setpointLocked;  // Toggle lock state
-    displayNeedsUpdate = true;         // Set flag to update display
+    setpointLocked = !setpointLocked;
+    displayNeedsUpdate = true;
     if (setpointLocked) {
       Serial.println("Setpoint locked.");
     } else {
       Serial.println("Setpoint unlocked.");
-      // Reset lastEncoderPosition to the current encoder position when unlocked
       noInterrupts();
       lastEncoderPosition = encoderPosition;
       interrupts();
@@ -140,116 +138,88 @@ void handleSetpointLock() {
 
 void handleSetpointChange() {
   long currentEncoderPosition;
-
-  // Temporarily disable interrupts to safely read encoderPosition
   noInterrupts();
   currentEncoderPosition = encoderPosition;
   interrupts();
 
   if (currentEncoderPosition != lastEncoderPosition && !setpointLocked) {
-    // Calculate new setpoint based on encoder position
-    // This assumes each encoder step changes the setpoint by 1 unit
     setpoint += (currentEncoderPosition - lastEncoderPosition);
-    lastEncoderPosition = currentEncoderPosition;  // Update last position
-
-    // Optionally, add bounds to setpoint
-    setpoint = max(0, min(setpoint, 100));  // Adjust min/max as needed
+    lastEncoderPosition = currentEncoderPosition;
+    setpoint = max(0, min(setpoint, 100));
 
     Serial.print("Setpoint changed to: ");
     Serial.println(setpoint);
 
-    displayNeedsUpdate = true;  // Set flag to update display
+    displayNeedsUpdate = true;
   }
 }
 
 void readTemp() {
-    static unsigned long lastTempReadTime = 0;  // Keep track of the last time the temperature was read
-    unsigned long currentMillis = millis();     // Current time in milliseconds
-    
-    if (currentMillis - lastTempReadTime >= READ_TEMP_MS) {  // Check if 500 milliseconds have elapsed
-        lastTempReadTime = currentMillis;  // Update the last read time to the current time
+  static unsigned long lastTempReadTime = 0;
+  unsigned long currentMillis = millis();
+  
+  if (currentMillis - lastTempReadTime >= READ_TEMP_MS) {
+    lastTempReadTime = currentMillis;
+    float newTemp = thermocouple.readCelsius();
+    currentTemp = kalmanFilter(newTemp);
 
-        float newTemp = thermocouple.readCelsius();  // Read new temperature from MAX6675
-        if (fabs(newTemp - currentTemp) >= 0.1) {  // Check for significant change to reduce noise
-            currentTemp = newTemp;
-            Serial.print("Sensor Temp Updated: ");
-            Serial.print(currentTemp);
-            Serial.println("C");
-            displayNeedsUpdate = true;  // Set flag to update display with new temperature
-        }
+    if (fabs(newTemp - currentTemp) >= 0.1) {
+      Serial.print("Sensor Temp Updated: ");
+      Serial.print(currentTemp);
+      Serial.println("C");
+      displayNeedsUpdate = true;
     }
+  }
 }
 
-// void setRelay() {
-//     // Relay engages when temperature is more than 0.5 degrees below the setpoint
-//     bool tempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
-//     // Relay disengages only when the temperature reaches or exceeds the setpoint
-//     bool tempHighEnough = (currentTemp >= setpoint);
-
-//     if (tempTooLow) {
-//         if (!relayIsOn) {  // Check if relay is currently off
-//             digitalWrite(relayPin, HIGH);  // Turn on the relay
-//             relayIsOn = true;
-//             Serial.println("Relay ON");
-//         }
-//     } else if (tempHighEnough) {
-//         if (relayIsOn) {  // Check if relay is currently on
-//             digitalWrite(relayPin, LOW);  // Turn off the relay
-//             relayIsOn = false;
-//             Serial.println("Relay OFF");
-//         }
-//     }
-
-//     // Update display if there is a change in relay status or temperature crossing set conditions
-//     if (prevTempTooLow != tempTooLow || (prevRelayIsOn != relayIsOn)) {
-//         displayNeedsUpdate = true;
-//         prevTempTooLow = tempTooLow;
-//         prevRelayIsOn = relayIsOn;
-//     }
-// }
 void setRelayWithPID() {
   Input = currentTemp;
   Setpoint = setpoint;
   myPID.Compute();
 
-  analogWrite(relayPin, Output);  // Output is the PWM value
+  // Calculate feedforward term based on heat loss rate
+  feedforwardTerm = heatLossRate * (Setpoint - currentTemp);
 
-  // Update display if there is a change in relay status or temperature crossing set conditions
-  if (prevTempTooLow != (currentTemp < (setpoint - RELAY_SINK_DEADBAND)) || (prevRelayIsOn != (Output > 0))) {
-      displayNeedsUpdate = true;
-      prevTempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
-      prevRelayIsOn = (Output > 0);
+  // Add feedforward term to PID output
+  double totalOutput = Output + feedforwardTerm;
+  totalOutput = constrain(totalOutput, 0, 255); // Ensure output is within valid range
+
+  analogWrite(relayPin, totalOutput);
+
+  if (prevTempTooLow != (currentTemp < (setpoint - RELAY_SINK_DEADBAND)) || (prevRelayIsOn != (totalOutput > 0))) {
+    displayNeedsUpdate = true;
+    prevTempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
+    prevRelayIsOn = (totalOutput > 0);
   }
 }
 
-
 void updateDisplay() {
   if (!displayNeedsUpdate) {
-    return;  // If no update is needed, just return
+    return;
   }
 
   display.clearDisplay();
   display.setTextSize(2);
-  display.setTextColor(SSD1306_WHITE);  // Set text color to white
+  display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
   display.print("Set: ");
   display.print(setpoint);
   display.print("C ");
   if (setpointLocked) {
-    display.print("*");  // Add an asterisk if setpoint is locked
+    display.print("*");
   }
 
   display.setCursor(0, 20);
   display.print("Temp:");
-  display.print(currentTemp); 
+  display.print(currentTemp);
 
   display.setCursor(100, 40);
   if (relayIsOn) {
-    display.print("~");  // Add [ON] if the relay is active
+    display.print("~");
   }
   display.display();
 
-  displayNeedsUpdate = false;  // Reset update flag
+  displayNeedsUpdate = false;
 }
 
 void loop() {
