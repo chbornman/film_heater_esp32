@@ -1,3 +1,4 @@
+/***************** INCLUDES ****************/
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -7,6 +8,7 @@
 #include <math.h>
 #include <PID_v1.h>
 
+/**************** MACROS ******************/
 // Tunable parameters
 #define BUTTON_PIN 9
 #define READ_TEMP_MS 750
@@ -22,6 +24,8 @@
 #define THERMO_CLK 18
 #define HEAT_LOSS_RATE 0.05
 
+
+/*************** GLOBALS *****************/
 // Display and sensor objects
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 MAX6675 thermocouple(THERMO_CLK, THERMO_CS, THERMO_DO);
@@ -61,6 +65,18 @@ float kalmanFilter(float measurement) {
     return X;
 }
 
+/***************** FUNCTION DECLARATIONS ***************/
+void setup();
+void updateEncoder();
+void handleSetpointLock();
+void handleSetpointChange();
+void readTemp();
+void setRelayWithPID();
+void updateDisplay();
+void loop();
+
+
+/**************** PUBLIC FUNCTIONS ********************/
 void setup() {
     pinMode(5, OUTPUT);
     digitalWrite(5, LOW);
