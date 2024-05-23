@@ -75,7 +75,6 @@ void setRelayWithPID();
 void updateDisplay();
 void loop();
 
-
 /**************** PUBLIC FUNCTIONS ********************/
 void setup() {
     pinMode(5, OUTPUT);
@@ -203,8 +202,11 @@ void setRelayWithPID() {
 
     analogWrite(RELAY_PIN, totalOutput);
 
-    float currentPwmPercentage = (totalOutput / 255.0) * 100;
-    if (fabs(currentPwmPercentage - previousPwmPercentage) > 1.0) {
+    // Convert PWM percentage to integer to display only full percent values
+    int currentPwmPercentage = static_cast<int>((totalOutput / 255.0) * 100);
+
+    // Update display if the percentage changes by more than 1% or if it reaches 0% or 100%
+    if (abs(currentPwmPercentage - static_cast<int>(previousPwmPercentage)) > 1 || currentPwmPercentage == 0 || currentPwmPercentage == 100) {
         displayNeedsUpdate = true;
         previousPwmPercentage = currentPwmPercentage;
     }
@@ -238,7 +240,7 @@ void updateDisplay() {
 
     display.setCursor(0, 40);
     display.print("PWM: ");
-    display.print(previousPwmPercentage);
+    display.print(static_cast<int>(previousPwmPercentage));  // Display only full percent values
     display.print("%");
 
     display.display();
