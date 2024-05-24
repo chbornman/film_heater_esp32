@@ -7,6 +7,8 @@
 #include <Bounce2.h>
 #include <math.h>
 #include <PID_v1.h>
+#include <WiFi.h>
+#include <ESP32_FTPClient.h>
 
 /**************** MACROS ******************/
 // Tunable parameters
@@ -24,6 +26,15 @@
 #define THERMO_CLK 18
 #define HEAT_LOSS_RATE 0.05
 
+// WiFi credentials
+const char* ssid = "your_SSID";
+const char* password = "your_WIFI_password";
+
+// FTP credentials
+const char* ftp_server = "192.168.0.7";
+const char* ftp_user = "caleb";
+const char* ftp_pass = "Omas0321!";
+const char* ftp_path = "/homes/caleb/esp32_logs/";
 
 /*************** GLOBALS *****************/
 // Display and sensor objects
@@ -31,6 +42,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 MAX6675 thermocouple(THERMO_CLK, THERMO_CS, THERMO_DO);
 Encoder myEnc(ENCODER_PIN_A, ENCODER_PIN_B);
 Bounce2::Button encoderButton = Bounce2::Button();
+ESP32_FTPClient ftp(ftp_server, ftp_user, ftp_pass, 21);
 
 // Variables
 bool setpointLocked = false;
@@ -73,6 +85,8 @@ void handleSetpointChange();
 void readTemp();
 void setRelayWithPID();
 void updateDisplay();
+void connectToWiFi();
+void logDataToFTP();
 void loop();
 
 /**************** PUBLIC FUNCTIONS ********************/
@@ -108,6 +122,44 @@ void setup() {
     Serial.println("MAX6675 test");
     delay(500);
     Serial.println("Setup complete - starting main loop");
+
+    connectToWiFi();
+}
+
+void connectToWiFi() {
+    Serial.print("Connecting to WiFi");
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("Connected!");
+}
+
+void logDataToFTP() {
+    // Create a timestamp
+    String timestamp = String(year()) + "-" + String(month()) + "-" + String(day()) + "_" + String(hour()) + "-" + String(minute()) + "-" + String(second());
+
+    // Create the filename with the timestamp
+    String filename = "film_heater_" + timestamp + ".csv";
+
+    // Create the log data
+    String logData = String(millis()) + "," + String(setpoint) + "," + String(currentTemp) + "\n";
+
+    // Connect to FTP
+    ftp.OpenConnection();
+    
+    // Change to the directory
+    ftp.ChangeWorkDir(ftp_path);
+    
+    // Create a new file
+    ftp.InitFile("Type A");
+    ftp.NewFile(filename.c_str());
+    ftp.WriteData(logData.c_str(), logData.length());
+    ftp.CloseFile();
+    
+    // Close FTP connection
+    ftp.CloseConnection();
 }
 
 void updateEncoder() {
@@ -125,7 +177,7 @@ void updateEncoder() {
             if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) {
                 encoderPosition--;
             }
-            if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) {
+            if (sum == 0b1110 || sum == 0b0117 || sum == 0b0001 || sum == 0b1000) {
                 encoderPosition++;
             }
             changeCount = 0;
@@ -198,60 +250,4 @@ void setRelayWithPID() {
 
     // Add feedforward term to PID output
     double totalOutput = Output + feedforwardTerm;
-    totalOutput = constrain(totalOutput, 0, 255); // Ensure output is within valid range
-
-    analogWrite(RELAY_PIN, totalOutput);
-
-    // Convert PWM percentage to integer to display only full percent values
-    int currentPwmPercentage = static_cast<int>((totalOutput / 255.0) * 100);
-
-    // Update display if the percentage changes by more than 1% or if it reaches 0% or 100%
-    if (abs(currentPwmPercentage - static_cast<int>(previousPwmPercentage)) > 1 || currentPwmPercentage == 0 || currentPwmPercentage == 100) {
-        displayNeedsUpdate = true;
-        previousPwmPercentage = currentPwmPercentage;
-    }
-
-    if (prevTempTooLow != (currentTemp < (setpoint - RELAY_SINK_DEADBAND)) || (prevRelayIsOn != (totalOutput > 0))) {
-        displayNeedsUpdate = true;
-        prevTempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
-        prevRelayIsOn = (totalOutput > 0);
-    }
-}
-
-void updateDisplay() {
-    if (!displayNeedsUpdate) {
-        return;  // If no update is needed, just return
-    }
-
-    display.clearDisplay();
-    display.setTextSize(2);
-    display.setTextColor(SSD1306_WHITE);  // Set text color to white
-    display.setCursor(0, 0);
-    display.print("Set: ");
-    display.print(setpoint);
-    display.print("C ");
-    if (setpointLocked) {
-        display.print("*");  // Add an asterisk if setpoint is locked
-    }
-
-    display.setCursor(0, 20);
-    display.print("Temp:");
-    display.print(currentTemp); 
-
-    display.setCursor(0, 40);
-    display.print("PWM: ");
-    display.print(static_cast<int>(previousPwmPercentage));  // Display only full percent values
-    display.print("%");
-
-    display.display();
-
-    displayNeedsUpdate = false;  // Reset update flag
-}
-
-void loop() {
-    handleSetpointLock();
-    handleSetpointChange();
-    readTemp();
-    setRelayWithPID();
-    updateDisplay();
-}
+    totalOutput = constrain(totalOutput, 0, 255
