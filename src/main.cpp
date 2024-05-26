@@ -7,6 +7,7 @@
 #include <Bounce2.h>
 #include <math.h>
 #include <PID_v1.h>
+#include <Preferences.h>  // Include the Preferences library for NVS
 
 /**************** MACROS ******************/
 #define BUTTON_PIN 9
@@ -33,6 +34,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 MAX6675 thermocouple(THERMO_CLK, THERMO_CS, THERMO_DO);
 Encoder myEnc(ENCODER_PIN_A, ENCODER_PIN_B);
 Bounce2::Button encoderButton = Bounce2::Button();
+Preferences preferences;  // Create a Preferences object
 
 // Variables
 bool setpointLocked = false;
@@ -102,6 +104,16 @@ void setup() {
         for (;;);
     }
 
+    // Initialize NVS
+    if (!preferences.begin("my-app", false)) {
+        Serial.println("Failed to initialize NVS");
+        for (;;);
+    }
+
+    // Retrieve the setpoint and lock state from NVS
+    setpoint = preferences.getInt("setpoint", 22);  // Default setpoint is 22 if not set
+    setpointLocked = preferences.getBool("setpointLocked", false);  // Default lock state is false if not set
+
     Setpoint = setpoint;
     myPID.SetMode(AUTOMATIC);
     myPID.SetOutputLimits(0, 255);
@@ -143,6 +155,10 @@ void handleSetpointLock() {
     if (encoderButton.pressed()) {
         setpointLocked = !setpointLocked;
         displayNeedsUpdate = true;
+
+        // Save the setpoint lock state to NVS
+        preferences.putBool("setpointLocked", setpointLocked);
+
         if (setpointLocked) {
             Serial.println("Setpoint locked.");
         } else {
@@ -164,6 +180,9 @@ void handleSetpointChange() {
         setpoint += (currentEncoderPosition - lastEncoderPosition);
         lastEncoderPosition = currentEncoderPosition;
         setpoint = max(0, min(setpoint, 100));
+
+        // Save the setpoint to NVS
+        preferences.putInt("setpoint", setpoint);
 
         Serial.print("Setpoint changed to: ");
         Serial.println(setpoint);
