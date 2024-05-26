@@ -27,6 +27,7 @@
 #define P_GAIN 20
 #define I_GAIN 0
 #define D_GAIN 0
+#define LONG_PRESS_DURATION 2000  // 2 seconds for long press detection
 
 /*************** GLOBALS *****************/
 // Display and sensor objects
@@ -50,6 +51,9 @@ bool prevRelayIsOn = false;
 bool prevTempTooLow = false;
 double Setpoint, Input, Output;
 PID myPID(&Input, &Output, &Setpoint, P_GAIN, I_GAIN, D_GAIN, DIRECT);
+bool tempUnitCelsius = true;  // True if Celsius, False if Fahrenheit
+unsigned long buttonPressStartTime = 0;
+bool longPressDetected = false;
 
 // Kalman filter variables
 float Q = 0.1;
@@ -69,6 +73,14 @@ float kalmanFilter(float measurement) {
     return X;
 }
 
+float toFahrenheit(float celsius) {
+    return celsius * 9.0 / 5.0 + 32.0;
+}
+
+float toCelsius(float fahrenheit) {
+    return (fahrenheit - 32.0) * 5.0 / 9.0;
+}
+
 /***************** FUNCTION DECLARATIONS ***************/
 void setup();
 void updateEncoder();
@@ -78,6 +90,7 @@ void readTemp();
 void setRelayWithPID();
 void updateDisplay();
 void loop();
+void handleLongPress();
 
 /**************** PUBLIC FUNCTIONS ********************/
 void setup() {
@@ -113,6 +126,7 @@ void setup() {
     // Retrieve the setpoint and lock state from NVS
     setpoint = preferences.getInt("setpoint", 22);  // Default setpoint is 22 if not set
     setpointLocked = preferences.getBool("setpointLocked", false);  // Default lock state is false if not set
+    tempUnitCelsius = preferences.getBool("tempUnitCelsius", true);  // Default to Celsius if not set
 
     Setpoint = setpoint;
     myPID.SetMode(AUTOMATIC);
@@ -249,15 +263,24 @@ void updateDisplay() {
     display.setTextColor(SSD1306_WHITE);  // Set text color to white
     display.setCursor(0, 0);
     display.print("Set: ");
-    display.print(setpoint);
-    display.print("C ");
+    if (tempUnitCelsius) {
+        display.print(setpoint);
+        display.print("C ");
+    } else {
+        display.print(toFahrenheit(setpoint));
+        display.print("F ");
+    }
     if (setpointLocked) {
         display.print("*");  // Add an asterisk if setpoint is locked
     }
 
     display.setCursor(0, 20);
     display.print("Temp:");
-    display.print(currentTemp); 
+    if (tempUnitCelsius) {
+        display.print(currentTemp);
+    } else {
+        display.print(toFahrenheit(currentTemp));
+    }
 
     display.setCursor(0, 40);
     display.print("PWM: ");
@@ -269,10 +292,31 @@ void updateDisplay() {
     displayNeedsUpdate = false;  // Reset update flag
 }
 
+void handleLongPress() {
+    encoderButton.update();
+
+    if (encoderButton.pressed()) {
+        buttonPressStartTime = millis();
+        longPressDetected = false;
+    } else if (encoderButton.released()) {
+        if (!longPressDetected) {
+            unsigned long pressDuration = millis() - buttonPressStartTime;
+            if (pressDuration >= LONG_PRESS_DURATION) {
+                longPressDetected = true;
+                tempUnitCelsius = !tempUnitCelsius;
+                preferences.putBool("tempUnitCelsius", tempUnitCelsius);  // Save unit preference
+                displayNeedsUpdate = true;
+                Serial.println(tempUnitCelsius ? "Switched to Celsius" : "Switched to Fahrenheit");
+            }
+        }
+    }
+}
+
 void loop() {
     handleSetpointLock();
     handleSetpointChange();
     readTemp();
     setRelayWithPID();
+    handleLongPress();
     updateDisplay();
 }
