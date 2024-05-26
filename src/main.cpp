@@ -52,8 +52,8 @@ bool prevTempTooLow = false;
 double Setpoint, Input, Output;
 PID myPID(&Input, &Output, &Setpoint, P_GAIN, I_GAIN, D_GAIN, DIRECT);
 bool tempUnitCelsius = true;  // True if Celsius, False if Fahrenheit
-unsigned long buttonPressStartTime = 0;
-bool longPressDetected = false;
+unsigned long buttonPressStartTime = 0;  // Declare in global scope
+bool longPressDetected = false;          // Declare in global scope
 
 // Kalman filter variables
 float Q = 0.1;
@@ -86,7 +86,7 @@ void readTemp();
 void setRelayWithPID();
 void updateDisplay();
 void loop();
-void handleLongPress();
+void handleButtonPress();
 void switchTemperatureUnit();
 
 /**************** PUBLIC FUNCTIONS ********************/
@@ -161,23 +161,19 @@ void updateEncoder() {
 }
 
 void handleSetpointLock() {
-    encoderButton.update();
+    setpointLocked = !setpointLocked;
+    displayNeedsUpdate = true;
 
-    if (encoderButton.pressed()) {
-        setpointLocked = !setpointLocked;
-        displayNeedsUpdate = true;
+    // Save the setpoint lock state to NVS
+    preferences.putBool("setpointLocked", setpointLocked);
 
-        // Save the setpoint lock state to NVS
-        preferences.putBool("setpointLocked", setpointLocked);
-
-        if (setpointLocked) {
-            Serial.println("Setpoint locked.");
-        } else {
-            Serial.println("Setpoint unlocked.");
-            noInterrupts();
-            lastEncoderPosition = encoderPosition;
-            interrupts();
-        }
+    if (setpointLocked) {
+        Serial.println("Setpoint locked.");
+    } else {
+        Serial.println("Setpoint unlocked.");
+        noInterrupts();
+        lastEncoderPosition = encoderPosition;
+        interrupts();
     }
 }
 
@@ -289,17 +285,23 @@ void updateDisplay() {
     displayNeedsUpdate = false;  // Reset update flag
 }
 
-void handleLongPress() {
+void handleButtonPress() {
     encoderButton.update();
 
     if (encoderButton.pressed()) {
         buttonPressStartTime = millis();
         longPressDetected = false;
-    } else if (encoderButton.released()) {
+    }
+
+    if (encoderButton.released()) {
         unsigned long pressDuration = millis() - buttonPressStartTime;
-        if (pressDuration >= LONG_PRESS_DURATION && !longPressDetected) {
-            longPressDetected = true;
-            switchTemperatureUnit();
+        if (pressDuration >= LONG_PRESS_DURATION) {
+            if (!longPressDetected) {
+                longPressDetected = true;
+                switchTemperatureUnit();
+            }
+        } else {
+            handleSetpointLock();
         }
     }
 }
@@ -312,10 +314,9 @@ void switchTemperatureUnit() {
 }
 
 void loop() {
-    handleSetpointLock();
+    handleButtonPress();
     handleSetpointChange();
     readTemp();
     setRelayWithPID();
-    handleLongPress();
     updateDisplay();
 }
