@@ -9,7 +9,6 @@
 #include <PID_v1.h>
 
 /**************** MACROS ******************/
-// Tunable parameters
 #define BUTTON_PIN 9
 #define READ_TEMP_MS 750
 #define RELAY_SINK_DEADBAND 0.5
@@ -22,8 +21,11 @@
 #define THERMO_DO 16
 #define THERMO_CS 17
 #define THERMO_CLK 18
-#define HEAT_LOSS_RATE 0.05
-
+// Tunable parameters
+#define HEAT_LOSS_RATE 1
+#define P_GAIN 20
+#define I_GAIN 0
+#define D_GAIN 0
 
 /*************** GLOBALS *****************/
 // Display and sensor objects
@@ -45,7 +47,7 @@ bool relayIsOn = false;
 bool prevRelayIsOn = false;
 bool prevTempTooLow = false;
 double Setpoint, Input, Output;
-PID myPID(&Input, &Output, &Setpoint, 2, 5, 1, DIRECT);
+PID myPID(&Input, &Output, &Setpoint, P_GAIN, I_GAIN, D_GAIN, DIRECT);
 
 // Kalman filter variables
 float Q = 0.1;
@@ -211,9 +213,9 @@ void setRelayWithPID() {
         previousPwmPercentage = currentPwmPercentage;
     }
 
-    if (prevTempTooLow != (currentTemp < (setpoint - RELAY_SINK_DEADBAND)) || (prevRelayIsOn != (totalOutput > 0))) {
+    // Update display if the relay state changes
+    if (prevRelayIsOn != (totalOutput > 0)) {
         displayNeedsUpdate = true;
-        prevTempTooLow = (currentTemp < (setpoint - RELAY_SINK_DEADBAND));
         prevRelayIsOn = (totalOutput > 0);
     }
 }
