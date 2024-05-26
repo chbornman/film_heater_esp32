@@ -91,6 +91,7 @@ void setRelayWithPID();
 void updateDisplay();
 void loop();
 void handleLongPress();
+void switchTemperatureUnit();
 
 /**************** PUBLIC FUNCTIONS ********************/
 void setup() {
@@ -267,7 +268,7 @@ void updateDisplay() {
         display.print(setpoint);
         display.print("C ");
     } else {
-        display.print(toFahrenheit(setpoint));
+        display.print((int)round(toFahrenheit(setpoint)));  // Round and convert to integer
         display.print("F ");
     }
     if (setpointLocked) {
@@ -279,7 +280,7 @@ void updateDisplay() {
     if (tempUnitCelsius) {
         display.print(currentTemp);
     } else {
-        display.print(toFahrenheit(currentTemp));
+        display.print((int)round(toFahrenheit(currentTemp)));  // Round and convert to integer
     }
 
     display.setCursor(0, 40);
@@ -299,17 +300,27 @@ void handleLongPress() {
         buttonPressStartTime = millis();
         longPressDetected = false;
     } else if (encoderButton.released()) {
-        if (!longPressDetected) {
-            unsigned long pressDuration = millis() - buttonPressStartTime;
-            if (pressDuration >= LONG_PRESS_DURATION) {
-                longPressDetected = true;
-                tempUnitCelsius = !tempUnitCelsius;
-                preferences.putBool("tempUnitCelsius", tempUnitCelsius);  // Save unit preference
-                displayNeedsUpdate = true;
-                Serial.println(tempUnitCelsius ? "Switched to Celsius" : "Switched to Fahrenheit");
-            }
+        unsigned long pressDuration = millis() - buttonPressStartTime;
+        if (pressDuration >= LONG_PRESS_DURATION && !longPressDetected) {
+            longPressDetected = true;
+            switchTemperatureUnit();
         }
     }
+}
+
+void switchTemperatureUnit() {
+    tempUnitCelsius = !tempUnitCelsius;
+    preferences.putBool("tempUnitCelsius", tempUnitCelsius);  // Save unit preference
+
+    // Convert setpoint to the new unit
+    if (tempUnitCelsius) {
+        setpoint = toCelsius(setpoint);
+    } else {
+        setpoint = toFahrenheit(setpoint);
+    }
+
+    displayNeedsUpdate = true;
+    Serial.println(tempUnitCelsius ? "Switched to Celsius" : "Switched to Fahrenheit");
 }
 
 void loop() {
