@@ -77,10 +77,6 @@ float toFahrenheit(float celsius) {
     return celsius * 9.0 / 5.0 + 32.0;
 }
 
-float toCelsius(float fahrenheit) {
-    return (fahrenheit - 32.0) * 5.0 / 9.0;
-}
-
 /***************** FUNCTION DECLARATIONS ***************/
 void setup();
 void updateEncoder();
@@ -266,10 +262,10 @@ void updateDisplay() {
     display.print("Set: ");
     if (tempUnitCelsius) {
         display.print(setpoint);
-        display.print("C ");
+        display.print("C");
     } else {
         display.print((int)round(toFahrenheit(setpoint)));  // Round and convert to integer
-        display.print("F ");
+        display.print("F");
     }
     if (setpointLocked) {
         display.print("*");  // Add an asterisk if setpoint is locked
@@ -311,14 +307,6 @@ void handleLongPress() {
 void switchTemperatureUnit() {
     tempUnitCelsius = !tempUnitCelsius;
     preferences.putBool("tempUnitCelsius", tempUnitCelsius);  // Save unit preference
-
-    // Convert setpoint to the new unit
-    if (tempUnitCelsius) {
-        setpoint = toCelsius(setpoint);
-    } else {
-        setpoint = toFahrenheit(setpoint);
-    }
-
     displayNeedsUpdate = true;
     Serial.println(tempUnitCelsius ? "Switched to Celsius" : "Switched to Fahrenheit");
 }
