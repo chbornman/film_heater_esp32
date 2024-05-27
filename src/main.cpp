@@ -27,7 +27,8 @@
 #define P_GAIN 20
 #define I_GAIN 0
 #define D_GAIN 0
-#define LONG_PRESS_DURATION 2000  // 2 seconds for long press detection
+#define LONG_PRESS_DURATION 2000
+#define CAL_OFFSET -2.0
 
 /*************** GLOBALS *****************/
 // Display and sensor objects
@@ -54,7 +55,7 @@ PID myPID(&Input, &Output, &Setpoint, P_GAIN, I_GAIN, D_GAIN, DIRECT);
 bool tempUnitCelsius = true;  // True if Celsius, False if Fahrenheit
 unsigned long buttonPressStartTime = 0;  // Declare in global scope
 bool longPressDetected = false;          // Declare in global scope
-
+float calibrationOffset =  CAL_OFFSET;
 // Kalman filter variables
 float Q = 0.1;
 float R = 0.1;
@@ -75,6 +76,10 @@ float kalmanFilter(float measurement) {
 
 float toFahrenheit(float celsius) {
     return celsius * 9.0 / 5.0 + 32.0;
+}
+
+float correctTemperature(float rawTemp) {
+    return rawTemp + calibrationOffset;  // Apply a calibration offset of 2°C
 }
 
 /***************** FUNCTION DECLARATIONS ***************/
@@ -205,7 +210,7 @@ void readTemp() {
     if (currentMillis - lastTempReadTime >= READ_TEMP_MS) {
         lastTempReadTime = currentMillis;
         float newTemp = thermocouple.readCelsius();
-        currentTemp = kalmanFilter(newTemp);
+        currentTemp = correctTemperature(kalmanFilter(newTemp));  // Apply calibration
 
         if (fabs(newTemp - currentTemp) >= 0.1) {
             Serial.print("Sensor Temp Updated: ");
