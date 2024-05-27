@@ -28,7 +28,7 @@
 #define I_GAIN 0
 #define D_GAIN 0
 #define LONG_PRESS_DURATION 2000
-#define CAL_OFFSET -2.0
+#define CAL_OFFSET -1.5
 
 /*************** GLOBALS *****************/
 // Display and sensor objects
